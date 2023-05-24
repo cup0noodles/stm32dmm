@@ -13,9 +13,9 @@
 #define MZ0 1
 #define MZ1 1.0241
 #define MZ2 0.9678
-#define BZ0 -0.8000
-#define BZ1 -6.487
-#define BZ2 126.8
+#define BZ0 -1
+#define BZ1 -20
+#define BZ2 115
 
 /*
  * Configure the keypad to be usable

@@ -37,19 +37,6 @@ void DAC_init(void){
 						  (GPIO_OSPEEDR_OSPEED5) |
 						  (GPIO_OSPEEDR_OSPEED7));  //Setting to very high speed (11)
 
-//	      DAC_port->PUPDR   &= ~(GPIO_PUPDR_PUPD4  |
-//	                          GPIO_PUPDR_PUPD5  |
-//	                          GPIO_PUPDR_PUPD7); //no pull up/pull down (00)
-
-	  //	      DAC_port->OTYPER  &= ~(GPIO_OTYPER_OT0 |
-	  //	                          GPIO_OTYPER_OT1 |
-	  //	                          GPIO_OTYPER_OT2 |
-	  //	                          GPIO_OTYPER_OT3); //Setting to push/pull
-	  //
-	  //	      DAC_port->ODR &= ~(GPIO_ODR_OD0 |
-	  //	      				GPIO_ODR_OD1 |
-	  //	                      GPIO_ODR_OD2 |
-	  //	  					GPIO_ODR_OD3); //turn off LEDs
 
 	  //SPI Configuration
 
@@ -101,7 +88,7 @@ void DAC_write(uint16_t val){
 	val &= ~((3 << 12));
 	val |= ((3 << 12));
 	//write to DR, all 16 bit no mask
-	//while ((SPI1->SR & (1 << SPI_SR_TXE_Pos)) == 0){}
+	while ((SPI1->SR & (1 << SPI_SR_TXE_Pos)) == 0){}
 
 	SPI1->DR = val;
 
@@ -119,7 +106,12 @@ uint16_t DAC_volt_conv(uint16_t voltage){
 	else if(voltage == 0){
 		return 0;
 	}
-	else{
-		return (((offset+voltage)*4095/3300));
-	}
+	//adc correct and convert
+	float adj,m,b;
+	uint64_t x;
+	x = ((uint64_t)voltage<<12)/3300;
+	m = DAC_MZ0;
+	b = DAC_BZ0;
+	adj = (((float)x)*m)+b;
+	return (uint16_t)adj;
 }

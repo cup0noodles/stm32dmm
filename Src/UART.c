@@ -7,7 +7,7 @@
 
 #include "main.h"
 #include <UART.h>
-#define USART_DIV 208
+#define USART_DIV 278
 
 
 void UART_init(void)

@@ -17,6 +17,8 @@
 #define MCP4922_GAIN_SEL 1 << 13
 #define MCP4922_SHDN_EN 1 << 12
 #define MCP4922_DATA_Mask 0xFFF
+#define DAC_MZ0 0.995
+#define DAC_BZ0 31
 
 
 

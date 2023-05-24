@@ -9,12 +9,10 @@
 #include <dac_functions.h>
 
 /* Define Sampling System */
-#define CLK_SPEED 32000000
+#define CLK_SPEED 32100000
 #define DC_SAMPLE_INTERVAL 16000 //100 sample in 50ms
-#define AC_SAMPLE_INTERVAL 16000
-#define DC_SAMPLE_COUNT 100
-#define AC_SAMPLE_COUNT 50
-#define SPLASH_DELAY 16000000
+#define DC_SAMPLE_COUNT 200
+#define AC_SAMPLE_COUNT 250
 
 
 void TIM_init(void);
@@ -27,8 +25,8 @@ void update_graph(char* x, char* y, uint16_t value);
 void SystemClock_Config(void);
 
 typedef enum state_var{
-	DC_INIT,
-	DC_MEASURE,
+	SAMPLE_INIT,
+	SAMPLE_BUSY,
 	DC_CALC,
 	FREQ_INIT,
 	FREQ_TRIG,
@@ -40,19 +38,20 @@ typedef enum state_var{
 	MODE_CHECK
 };
 
-enum state_var state = DC_INIT;
+enum state_var state = SAMPLE_INIT;
 uint8_t value_flag,cap_flag;
 uint16_t adc_value;
 uint32_t captured_count;
 uint8_t mode = 0; ///flag
 uint8_t timeout = 0;
+
 int main(void)
 {
  	HAL_Init();
 	SystemClock_Config();
 	/* CLK Config */
 	RCC->CR &= ~(RCC_CR_MSIRANGE);  //clear MSI range
-	RCC->CR |= (RCC_CR_MSIRANGE_9); //config MSI clk to ~32MHz
+	RCC->CR |= (RCC_CR_MSIRANGE_10); //config MSI clk to ~32MHz
 
 	DAC_init();
 	COMP_init();
@@ -67,7 +66,7 @@ int main(void)
 	//For ADC Sampling
 	uint16_t sample_count;			   //inc to keep track of how many samples taken
 	uint16_t sample_N; 				   //num of samples to take
-	uint16_t vsample[DC_SAMPLE_COUNT]; //array hold samples, not fully used for AC
+	uint16_t vsample[1000]; //array hold samples, not fully used for AC
 	uint32_t ac_sample_interval;	   //period to sample values for AC measurements - variable
 	uint8_t current_mode = 0;		   // 0DC 1 AC, updated once per sample cycle
 
@@ -79,14 +78,15 @@ int main(void)
 
 	//Freq Measurements
 	uint32_t sampletimes[2];
-	uint32_t period;
-	uint16_t freq;
+	uint32_t period, period_cor;
+	uint32_t freq;
+	uint32_t timeout_cnt;
 
 	while (1)
 	{
 		switch(state)
 		{
-			case DC_INIT:
+			case SAMPLE_INIT:
 				//set sample param based on AC or DC
 				if(ac_measure)
 				{
@@ -104,9 +104,9 @@ int main(void)
 				TIM2->SR &= ~(TIM_SR_CC2IF);
 				TIM2->CCER |=  (TIM_CCER_CC2E);   //enable capture from the counter
 				TIM2->DIER |= (TIM_DIER_CC2IE);
-				state = DC_MEASURE;
+				state = SAMPLE_BUSY;
 				break;
-			case DC_MEASURE:
+			case SAMPLE_BUSY:
 				while(sample_count < sample_N)
 				{
 					if(mode)
@@ -144,7 +144,7 @@ int main(void)
 					state = AC_CALC;
 					ac_measure = 0;
 				}
-				else if(mode)
+				else if(mode) //if switching modes
 				{
 					state = MODE_CHECK;
 				}
@@ -159,11 +159,11 @@ int main(void)
 				for(uint8_t j=0;j < 20; j++)
 				{
 					vsum = 0;
-					for(uint8_t k=0;k < 1; k++)
+					for(uint8_t k=0;k < 10; k++)
 					{
-						vsum += vsample[(j*1)+k];
+						vsum += vsample[(j*10)+k];
 					}
-					vsum2 += (vsum / 1);
+					vsum2 += (vsum / 10	);
 				}
 
 				vdc = adc_cc(vsum2/20);
@@ -176,24 +176,26 @@ int main(void)
 				}
 				else
 				{
+					DAC_write(DAC_volt_conv(vdc));
 					//dc mode, display value
 					state = DC_DISPLAY;
 				}
 				break;
 			case FREQ_INIT:
-				TIM2->DIER |= (TIM_DIER_UIE);
 				TIM2->SR &= ~(TIM_SR_CC2IF);
 				TIM2->SR &= ~(TIM_SR_CC4IF);
-				TIM2->CCER |= (TIM_CCER_CC4E);
+				TIM2->DIER |= (TIM_DIER_UIE);
 				TIM2->DIER |= (TIM_DIER_CC4IE);
-				TIM2->CCR2 = TIM2->CNT + 48000000; //1.5s timeout
-				TIM2->CCER |= (TIM_CCER_CC2E);
-				TIM2->DIER |= (TIM_DIER_CC2IE);
+				TIM2->DIER &= ~(TIM_DIER_CC2IE);
+				TIM2->CCER &=  ~(TIM_CCER_CC2E); //disable timeout counter
+				TIM2->CCER |= (TIM_CCER_CC4E);
 				state = FREQ_TRIG;
 
 				break;
 			case FREQ_TRIG:
-				while(sample_count < sample_N)
+//				timeout_cnt = 0;
+				sample_count = 0;
+				while(sample_count < 2)
 				{
 					if(cap_flag)
 					{
@@ -201,19 +203,10 @@ int main(void)
 						cap_flag = 0;
 						sample_count++;
 					}
-					if(timeout)
-					{
-						sampletimes[0] = 0;
-						sampletimes[1] = 0;
-						timeout = 0;
-						break;
-					}
 				}
+				TIM2->DIER &= ~(TIM_DIER_UIE);
 				TIM2->CCER &=  ~(TIM_CCER_CC4E); //disable capture from counter
-				TIM2->CCER &=  ~(TIM_CCER_CC2E); //disable timeout counter
 				TIM2->DIER &= ~(TIM_DIER_CC4IE);
-				TIM2->DIER &= ~(TIM_DIER_CC2IE);
-				sample_count = 0;
 				state = FREQ_CALC;
 				break;
 			case FREQ_CALC:
@@ -228,26 +221,25 @@ int main(void)
 						//normal no rollover
 						period = sampletimes[1] - sampletimes[0];
 					}
-				if (period == 0)
-				{
-					freq=0;
-				}
-				else
-				{
-					freq = CLK_SPEED/period;
-				}
+				freq = CLK_SPEED/period;
+				freq = adcmax(freq, 1);
+				freq = adcmin(freq, 1000);
+
+
 				state = AC_INIT;
 				break;
 			case AC_INIT:
 				//take 200 measurements with interval of period
 				//TODO debug value
-				period = 64000;
+				//period = 64000;
+				period_cor = CLK_SPEED/freq;
 				ac_measure = 1;
-				ac_sample_interval = period/AC_SAMPLE_COUNT;
-				state = DC_INIT;
+				ac_sample_interval = (period_cor*2)/AC_SAMPLE_COUNT;
+				state = SAMPLE_INIT;
 				break;
 			case AC_CALC:
 				TIM2->CCER &= ~TIM_CCER_CC2E;
+				TIM2->DIER &= ~TIM_DIER_CC2IE;
 				//calculate RMS
 				vsum = 0;
 				vmax = 0;
@@ -257,12 +249,12 @@ int main(void)
 				{
 					vmax = adcmax(vmax, vsample[k]);
 					vmin = adcmin(vmin, vsample[k]);
-					vrmssum += vsample[k]*vsample[k];
-					vsum += vsample[k];
+					vrmssum += pow(adc_cc(vsample[k]), 2);
+					vsum += adc_cc(vsample[k]);
 				}
-				vdc = adc_cc(vsum / AC_SAMPLE_COUNT);
+				vdc = (vsum / AC_SAMPLE_COUNT);
 				vrmssum = vrmssum / AC_SAMPLE_COUNT;
-				vrms = adc_cc(sqrt(vrmssum));
+				vrms = sqrt(vrmssum);
 				vpp = adc_cc(vmax-vmin);
 				state = AC_DISPLAY;
 				break;
@@ -324,10 +316,10 @@ int main(void)
 				        print_AC_screen();
 					}
 				}
-				state = DC_INIT;
+				state = SAMPLE_INIT;
 				break;
 			default:
-				state = DC_INIT;
+				state = SAMPLE_INIT;
 				break;
 		}
 	}
@@ -341,7 +333,7 @@ void USART2_IRQHandler(void){
 }
 void TIM2_IRQHandler(void)
 {
-	if(state == DC_MEASURE){
+	if(state == SAMPLE_BUSY){
 		//CC2 - VDC sampling
 		TIM2->SR &= ~(TIM_SR_CC2IF);
 		TIM2->CCR2 += DC_SAMPLE_INTERVAL; //2kHz ADC en
@@ -349,11 +341,6 @@ void TIM2_IRQHandler(void)
 	}
 	else if(state == FREQ_TRIG)
 	{
-		if(TIM2->SR && TIM_SR_CC2IF)
-		{
-			TIM2->SR &= ~TIM_SR_CC2IF;
-			timeout = 1;
-		}
 		TIM2->SR &= ~(TIM_SR_CC4IF); //clear flag
 		captured_count = TIM2->CCR4;
 		cap_flag = 1;
@@ -422,8 +409,8 @@ void COMP_init(void)
 	GPIOC->MODER |= (GPIO_MODER_MODE4);
 
 	//Med hyster 0-3
-	COMP1->CSR &= ~(2 << COMP_CSR_HYST_Pos);
-	COMP1->CSR |= (2 << COMP_CSR_HYST_Pos);
+	COMP1->CSR &= ~(3 << COMP_CSR_HYST_Pos);
+	COMP1->CSR |= (3 << COMP_CSR_HYST_Pos);
 
 	//Pos in PB2
 	COMP1->CSR &= ~(COMP_CSR_INPSEL);

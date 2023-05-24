@@ -53,8 +53,8 @@ void adc_init(void){
 	//ADC 2.5clk hold - 000
 	//47.5clk - 100
 	//640.5clk - 111
-	ADC1->SMPR1 &= ~(100 << ADC_SMPR1_SMP5_Pos);
-	ADC1->SMPR1 |=  (100 << ADC_SMPR1_SMP5_Pos);
+	ADC1->SMPR1 &= ~(000 << ADC_SMPR1_SMP5_Pos);
+	ADC1->SMPR1 |=  (000 << ADC_SMPR1_SMP5_Pos);
 
 
 	//EN INTR for end of conv
