@@ -68,6 +68,7 @@ int main(void)
 	uint16_t sample_N; 				   //num of samples to take
 	uint16_t vsample[1000]; //array hold samples, not fully used for AC
 	uint32_t ac_sample_interval;	   //period to sample values for AC measurements - variable
+	uint32_t sample_interval;
 	uint8_t current_mode = 0;		   // 0DC 1 AC, updated once per sample cycle
 
 	//DC sample analysis
@@ -93,12 +94,14 @@ int main(void)
 					// setup for AC
 					sample_N = AC_SAMPLE_COUNT;
 					TIM2->CCR2 = TIM2->CNT + ac_sample_interval;   //set CCR1 16k ahead of count
+					sample_interval = ac_sample_interval;
 				}
 				else
 				{
 					//setup for DC
 					sample_N = DC_SAMPLE_COUNT;
 					TIM2->CCR2 = TIM2->CNT + DC_SAMPLE_INTERVAL;   //set CCR1 16k ahead of count
+					sample_interval = DC_SAMPLE_INTERVAL;
 				}
 				//set up CCR2 to trigger AC measurements
 				TIM2->SR &= ~(TIM_SR_CC2IF);
@@ -336,7 +339,7 @@ void TIM2_IRQHandler(void)
 	if(state == SAMPLE_BUSY){
 		//CC2 - VDC sampling
 		TIM2->SR &= ~(TIM_SR_CC2IF);
-		TIM2->CCR2 += DC_SAMPLE_INTERVAL; //2kHz ADC en
+		TIM2->CCR2 += sample_interval; //2kHz ADC en
 		ADC1->CR |= ADC_CR_ADSTART;
 	}
 	else if(state == FREQ_TRIG)
